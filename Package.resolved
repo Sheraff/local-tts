@@ -1,0 +1,24 @@
+{
+  "originHash" : "366c96245feb82b3cd5490e4426c13a1978aa3a3cf32e1ac2ea66f2c4d9145e3",
+  "pins" : [
+    {
+      "identity" : "espeak-ng-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Sheraff/espeak-ng-spm.git",
+      "state" : {
+        "branch" : "local-tts-macos-fixes",
+        "revision" : "e3b616e00ecc8b7d31e61980830d2180e37a8bb2"
+      }
+    },
+    {
+      "identity" : "onnxruntime-swift-package-manager",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/microsoft/onnxruntime-swift-package-manager",
+      "state" : {
+        "revision" : "b7fb7f7dea8a2469e6335d95a61b8f36d0dc83b2",
+        "version" : "1.24.2"
+      }
+    }
+  ],
+  "version" : 3
+}

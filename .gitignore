@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+
+# Xcode and local IDE state
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+.idea/
+.vscode/
+
+# Build products and archives
+*.app/
+*.dSYM/
+*.xcarchive/
+*.ipa
+*.profdata
+*.gcda
+*.gcno
+
+# Local model assets and generated runtime data
+Models/
+models/
+*.onnx
+*.ort
+*.mlmodelc/
+
+# Logs, environment, and local secrets
+*.log
+.env
+.env.*
+!.env.example
+.netrc

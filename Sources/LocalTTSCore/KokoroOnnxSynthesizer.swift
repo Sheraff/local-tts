@@ -34,11 +34,7 @@ final class KokoroOnnxSynthesizer: @unchecked Sendable {
             throw SpeechEngineError.synthesisFailed("No Kokoro tokens generated for chunk")
         }
 
-        let leadingContextTokenIDs = tokenizer.leadingContextTokenIDs
-        let tokenSegments = segmentedTokenIDs(
-            rawTokenIDs,
-            maxTokenCount: KokoroTokenizer.maxModelTokenCount - leadingContextTokenIDs.count
-        )
+        let tokenSegments = segmentedTokenIDs(rawTokenIDs)
         guard !tokenSegments.isEmpty else {
             throw SpeechEngineError.synthesisFailed("No Kokoro token segments generated for chunk")
         }
@@ -49,19 +45,15 @@ final class KokoroOnnxSynthesizer: @unchecked Sendable {
         let voiceEmbedding = try KokoroVoiceEmbedding(url: voiceURL)
 
         var samples: [Float] = []
-        for (index, tokenSegment) in tokenSegments.enumerated() {
+        for tokenSegment in tokenSegments {
             try Task.checkCancellation()
-            let primedTokenSegment = leadingContextTokenIDs + tokenSegment
             samples.append(
                 contentsOf: try synthesizeTokenSegment(
-                    primedTokenSegment,
+                    tokenSegment,
                     voiceEmbedding: voiceEmbedding,
                     speed: request.speed
                 )
             )
-            if index < (tokenSegments.indices.last ?? 0) {
-                samples.append(contentsOf: Array(repeating: 0, count: 1_440))
-            }
         }
 
         try write(samples: samples, to: outputURL)
@@ -131,7 +123,8 @@ final class KokoroOnnxSynthesizer: @unchecked Sendable {
             return [tokenIDs]
         }
 
-        let breakTokenIDs = tokenizer.preferredBreakTokenIDs
+        let sentenceBreakTokenIDs = tokenizer.sentenceBreakTokenIDs
+        let softBreakTokenIDs = tokenizer.softBreakTokenIDs
         var segments: [[Int64]] = []
         var start = 0
 
@@ -142,24 +135,52 @@ final class KokoroOnnxSynthesizer: @unchecked Sendable {
                 break
             }
 
-            let searchStart = max(start, limit - 160)
-            var end = limit
-            if !breakTokenIDs.isEmpty {
-                for index in stride(from: limit - 1, through: searchStart, by: -1) where breakTokenIDs.contains(tokenIDs[index]) {
-                    end = index + 1
-                    break
-                }
-            }
+            let minimumSentenceBreakIndex = start + min(120, maxTokenCount / 3)
+            let sentenceBreakIndex = lastBreakIndex(
+                in: tokenIDs,
+                start: start,
+                limit: limit,
+                minimumIndex: minimumSentenceBreakIndex,
+                breakTokenIDs: sentenceBreakTokenIDs
+            )
+            let softBreakIndex = lastBreakIndex(
+                in: tokenIDs,
+                start: start,
+                limit: limit,
+                minimumIndex: max(start, limit - 160),
+                breakTokenIDs: softBreakTokenIDs
+            )
 
-            if end <= start {
-                end = limit
-            }
+            let end = (sentenceBreakIndex ?? softBreakIndex).map { $0 + 1 } ?? limit
 
             segments.append(Array(tokenIDs[start..<end]))
             start = end
         }
 
         return segments
+    }
+
+    private func lastBreakIndex(
+        in tokenIDs: [Int64],
+        start: Int,
+        limit: Int,
+        minimumIndex: Int,
+        breakTokenIDs: Set<Int64>
+    ) -> Int? {
+        guard !breakTokenIDs.isEmpty, limit > start else {
+            return nil
+        }
+
+        let lowerBound = min(max(start, minimumIndex), limit - 1)
+        guard lowerBound <= limit - 1 else {
+            return nil
+        }
+
+        for index in stride(from: limit - 1, through: lowerBound, by: -1) where breakTokenIDs.contains(tokenIDs[index]) {
+            return index
+        }
+
+        return nil
     }
 
     private func inputName(preferred: String) -> String {

@@ -14,14 +14,12 @@ final class KokoroTokenizer: @unchecked Sendable {
         allowedCharacters = Set(vocabulary.keys.compactMap { $0.count == 1 ? $0.first : nil })
     }
 
-    var preferredBreakTokenIDs: Set<Int64> {
-        Set([".", "!", "?", ";", ":", ",", " "].compactMap { vocabulary[$0] })
+    var sentenceBreakTokenIDs: Set<Int64> {
+        Set([".", "!", "?", ";", ":"].compactMap { vocabulary[$0] })
     }
 
-    var leadingContextTokenIDs: [Int64] {
-        Array(repeating: [".", " "], count: 6)
-            .flatMap { $0 }
-            .compactMap { vocabulary[$0] }
+    var softBreakTokenIDs: Set<Int64> {
+        Set([",", " "].compactMap { vocabulary[$0] })
     }
 
     func tokenize(_ text: String, british: Bool, maxTokenCount: Int = KokoroTokenizer.maxModelTokenCount) throws -> [Int64] {

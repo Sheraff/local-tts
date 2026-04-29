@@ -1,10 +1,19 @@
 import Foundation
 
 public struct TextChunker: Sendable {
+    public let firstMinimumCharacterCount: Int
+    public let firstHardCharacterLimit: Int
     public let targetCharacterCount: Int
     public let hardCharacterLimit: Int
 
-    public init(targetCharacterCount: Int = 420, hardCharacterLimit: Int = 650) {
+    public init(
+        firstMinimumCharacterCount: Int = 100,
+        firstHardCharacterLimit: Int = 650,
+        targetCharacterCount: Int = 900,
+        hardCharacterLimit: Int = 1_200
+    ) {
+        self.firstMinimumCharacterCount = firstMinimumCharacterCount
+        self.firstHardCharacterLimit = firstHardCharacterLimit
         self.targetCharacterCount = targetCharacterCount
         self.hardCharacterLimit = hardCharacterLimit
     }
@@ -30,9 +39,7 @@ public struct TextChunker: Sendable {
                 let separator = unitIndex == 0 ? "\n\n" : " "
                 let candidate = current + separator + unit
 
-                if candidate.count <= targetCharacterCount
-                    || (current.count < targetCharacterCount / 2 && candidate.count <= hardCharacterLimit)
-                {
+                if shouldMerge(current: current, candidate: candidate, isFirstChunk: rawChunks.isEmpty) {
                     current = candidate
                 } else {
                     rawChunks.append(current)
@@ -50,37 +57,25 @@ public struct TextChunker: Sendable {
         }
     }
 
-    private func splitParagraph(_ paragraph: String) -> [String] {
-        if paragraph.count <= targetCharacterCount {
-            return [paragraph]
+    private func shouldMerge(current: String, candidate: String, isFirstChunk: Bool) -> Bool {
+        if isFirstChunk {
+            return current.count < firstMinimumCharacterCount && candidate.count <= firstHardCharacterLimit
         }
 
+        return candidate.count <= targetCharacterCount
+            || (current.count < targetCharacterCount / 2 && candidate.count <= hardCharacterLimit)
+    }
+
+    private func splitParagraph(_ paragraph: String) -> [String] {
         let sentences = splitSentences(paragraph)
         var units: [String] = []
-        var current = ""
 
         for sentence in sentences {
             if sentence.count > hardCharacterLimit {
-                if !current.isEmpty {
-                    units.append(current)
-                    current = ""
-                }
                 units.append(contentsOf: splitByWords(sentence))
-                continue
-            }
-
-            if current.isEmpty {
-                current = sentence
-            } else if (current + " " + sentence).count <= targetCharacterCount {
-                current += " " + sentence
             } else {
-                units.append(current)
-                current = sentence
+                units.append(sentence)
             }
-        }
-
-        if !current.isEmpty {
-            units.append(current)
         }
 
         return units

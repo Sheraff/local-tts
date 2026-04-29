@@ -11,6 +11,8 @@ struct LocalTTSTestRunner {
         testNormalizeRemovesObviousChromeAndPreservesParagraphs(recorder)
         testChunkerKeepsChunksUnderHardLimitForLongParagraphs(recorder)
         testDefaultChunkerSplitsMediumPastedParagraphs(recorder)
+        testDefaultChunkerUsesFirstSentenceForStartup(recorder)
+        testDefaultChunkerReachesMinimumForShortFirstSentence(recorder)
         testDefaultChunkerSplitsMediumParagraphAtSentences(recorder)
         try testKokoroFrontendPreservesPhonemeTokens(recorder)
         try await testPipelineEmitsFirstChunkBeforeAllChunksAreSynthesized(recorder)
@@ -74,12 +76,41 @@ struct LocalTTSTestRunner {
         for multiple paragraphs to be synthesized before playback begins, because quick first audio matters \
         more than creating very large chunks for the local model.
         """
-        let text = Array(repeating: paragraph, count: 3).joined(separator: "\n\n")
+        let text = Array(repeating: paragraph, count: 8).joined(separator: "\n\n")
         let chunks = TextChunker().chunks(from: text)
 
         recorder.expect(chunks.count > 1, "default chunker splits medium pasted paragraphs")
-        recorder.expect(chunks.first?.text.count ?? 0 <= 650, "default chunker keeps first chunk bounded")
-        recorder.expect(chunks.allSatisfy { $0.text.count <= 650 }, "default chunker respects hard limit")
+        recorder.expect(chunks.first?.text.count ?? 0 <= 650, "default chunker keeps first chunk short for faster startup")
+        recorder.expect(chunks.allSatisfy { $0.text.count <= 1_200 }, "default chunker respects hard limit")
+    }
+
+    @MainActor
+    private static func testDefaultChunkerUsesFirstSentenceForStartup(
+        _ recorder: FailureRecorder
+    ) {
+        let firstSentence = """
+        This opening sentence is intentionally long enough to clear the startup minimum while still being a single sentence for the first audio chunk.
+        """
+        let text = """
+        \(firstSentence) The second sentence should be left for the following chunk. The third sentence keeps the article long enough to split.
+        """
+        let chunks = TextChunker().chunks(from: text)
+
+        recorder.expect(chunks.first?.text == firstSentence, "default chunker uses the first full sentence as the startup chunk")
+    }
+
+    @MainActor
+    private static func testDefaultChunkerReachesMinimumForShortFirstSentence(
+        _ recorder: FailureRecorder
+    ) {
+        let text = """
+        Short. This second sentence is long enough to push the first audio chunk over the minimum startup size without exceeding the soft cap. The third sentence should remain outside the first chunk.
+        """
+        let chunks = TextChunker().chunks(from: text)
+
+        recorder.expect((chunks.first?.text.count ?? 0) >= 100, "default chunker grows a short first sentence to the startup minimum")
+        recorder.expect(chunks.first?.text.hasPrefix("Short. This second sentence") == true, "default chunker appends the second sentence when needed")
+        recorder.expect(chunks.first?.text.contains("The third sentence") == false, "default chunker stops after reaching the startup minimum")
     }
 
     @MainActor
@@ -89,11 +120,20 @@ struct LocalTTSTestRunner {
         let sentence = """
         This sentence is long enough to build a medium paragraph but short enough to keep a clean sentence boundary.
         """
-        let text = Array(repeating: sentence, count: 8).joined(separator: " ")
+        let text = Array(repeating: sentence, count: 18).joined(separator: " ")
         let chunks = TextChunker().chunks(from: text)
 
         recorder.expect(chunks.count > 1, "default chunker splits medium paragraphs at sentence boundaries")
-        recorder.expect(chunks.allSatisfy { $0.text.count <= 650 }, "sentence chunking respects hard limit")
+        recorder.expect(chunks.allSatisfy { $0.text.count <= 1_200 }, "sentence chunking respects hard limit")
+        recorder.expect(
+            chunks.dropLast().allSatisfy { chunk in
+                guard let last = chunk.text.trimmingCharacters(in: .whitespacesAndNewlines).last else {
+                    return false
+                }
+                return ".!?".contains(last)
+            },
+            "default chunker avoids ending non-final chunks mid-sentence"
+        )
     }
 
     @MainActor

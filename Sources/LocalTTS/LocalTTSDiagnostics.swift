@@ -59,7 +59,54 @@ enum LocalTTSDiagnostics {
             }
         }
 
+        if CommandLine.arguments.contains("--write-demo-chunks") {
+            do {
+                try await writeDemoChunks(engine: engine)
+            } catch {
+                print("Demo chunk synthesis: failed: \(error.localizedDescription)")
+                return 1
+            }
+        }
+
         return status.isComplete && frontend.isReady ? 0 : 1
+    }
+
+    private static func writeDemoChunks(engine: KokoroOnnxEngine) async throws {
+        let text = """
+        Happy pink hippos spend their days splashing through sparkling rivers, their rosy backs shining in the warm sunlight. They love floating lazily among lily pads, blowing bubbles, and greeting every passing bird with a cheerful snort. Wherever they go, they seem to carry a little cloud of joy with them.
+
+        In the evenings, happy pink hippos gather on soft muddy banks to share stories and nibble on sweet river grass. Their laughter sounds like gentle drums rolling across the water, making frogs pause their songs and fish peek above the surface. Even the moon seems to glow a little brighter when the hippos are nearby.
+        """
+        let outputDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("LocalTTS-Demo-Chunks", isDirectory: true)
+        if FileManager.default.fileExists(atPath: outputDirectory.path) {
+            try FileManager.default.removeItem(at: outputDirectory)
+        }
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+        let chunks = TextChunker().chunks(from: TextNormalizer().normalize(text))
+        let voice = SpeechVoice(id: "af_heart", name: "Heart", language: "English US", detail: "American female")
+
+        print("Writing demo chunks: \(outputDirectory.path)")
+        for chunk in chunks {
+            let audio = try await engine.synthesize(
+                SpeechSynthesisRequest(
+                    text: chunk.text,
+                    voice: voice,
+                    speed: 1,
+                    chunkIndex: chunk.index,
+                    totalChunks: chunks.count
+                ),
+                outputDirectory: outputDirectory
+            )
+            let samples = try readSamples(from: audio.fileURL)
+            let firstNonSilent = firstNonSilentSample(in: samples)
+            print("Chunk \(chunk.index + 1)/\(chunks.count): \(audio.fileURL.path)")
+            print("Text: \(chunk.text.prefix(120))")
+            print("Samples: \(samples.count), first non-silent sample: \(firstNonSilent)")
+        }
+
+        await engine.unload()
     }
 
     private static func writeSamples(engine: KokoroOnnxEngine) async throws {
@@ -132,6 +179,10 @@ enum LocalTTSDiagnostics {
             total += abs(lhs[index] - rhs[index])
         }
         return total / Float(count)
+    }
+
+    private static func firstNonSilentSample(in samples: [Float]) -> Int {
+        samples.firstIndex { abs($0) > 0.0005 } ?? -1
     }
 }
 

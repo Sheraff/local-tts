@@ -23,8 +23,10 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
     private var activeSessionID: UUID?
     private let audioEngine = AVAudioEngine()
     private let audioPlayerNode = AVAudioPlayerNode()
+    private let maximumScheduledAudioCount = 2
     private var isAudioEngineConfigured = false
     private var scheduledAudio: [ScheduledAudio] = []
+    private var backpressureContinuations: [CheckedContinuation<Void, Never>] = []
     private var producerFinished = false
 
     public init(
@@ -89,7 +91,10 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
                     speed: speed,
                     outputDirectory: outputDirectory
                 ) { [weak self] audio in
-                    self?.enqueue(audio, sessionID: sessionID)
+                    guard let self else {
+                        throw CancellationError()
+                    }
+                    try await self.enqueue(audio, sessionID: sessionID)
                 }
                 self?.finishProducing(sessionID: sessionID)
             } catch is CancellationError {
@@ -148,6 +153,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         } else if status != .paused {
             startPlaybackIfNeeded()
         }
+        resumeBackpressureWaitersIfNeeded()
     }
 
     public func stop(clearSession: Bool = true, cancelEngine: Bool = true) {
@@ -157,6 +163,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         audioEngine.stop()
         scheduledAudio.removeAll()
         queuedChunks = 0
+        resumeBackpressureWaiters()
         producerFinished = true
         activeSessionID = nil
         status = .idle
@@ -184,15 +191,16 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         }
     }
 
-    private func enqueue(_ audio: SynthesizedAudioChunk, sessionID: UUID) {
+    private func enqueue(_ audio: SynthesizedAudioChunk, sessionID: UUID) async throws {
         guard activeSessionID == sessionID else {
-            return
+            throw CancellationError()
         }
         if modelState != .unloaded {
             modelState = .ready
         }
         schedule(audio)
         startPlaybackIfNeeded()
+        try await waitForQueueCapacity(sessionID: sessionID)
     }
 
     private func finishProducing(sessionID: UUID) {
@@ -215,6 +223,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         producerTask = nil
         producerFinished = true
         activeSessionID = nil
+        resumeBackpressureWaiters()
         if modelState != .unloaded {
             modelState = .ready
         }
@@ -280,6 +289,34 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
                 status = .preparing
             }
         }
+        resumeBackpressureWaitersIfNeeded()
+    }
+
+    private func waitForQueueCapacity(sessionID: UUID) async throws {
+        while activeSessionID == sessionID && scheduledAudio.count > maximumScheduledAudioCount {
+            await withCheckedContinuation { continuation in
+                backpressureContinuations.append(continuation)
+            }
+        }
+
+        if activeSessionID != sessionID || Task.isCancelled {
+            throw CancellationError()
+        }
+    }
+
+    private func resumeBackpressureWaitersIfNeeded() {
+        guard scheduledAudio.count <= maximumScheduledAudioCount else {
+            return
+        }
+        resumeBackpressureWaiters()
+    }
+
+    private func resumeBackpressureWaiters() {
+        let continuations = backpressureContinuations
+        backpressureContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 
     private func updatePlaybackProgress() {
@@ -314,6 +351,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         audioEngine.stop()
         scheduledAudio.removeAll()
         queuedChunks = 0
+        resumeBackpressureWaiters()
         scheduleIdleUnload()
         removeSessionDirectory()
     }

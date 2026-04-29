@@ -66,7 +66,7 @@ public final class SpeechSynthesisPipeline: Sendable {
         voice: SpeechVoice,
         speed: Double,
         outputDirectory: URL,
-        onChunk: @MainActor @Sendable (SynthesizedAudioChunk) async -> Void
+        onChunk: @MainActor @Sendable (SynthesizedAudioChunk) async throws -> Void
     ) async throws {
         try await engine.load()
 
@@ -80,7 +80,7 @@ public final class SpeechSynthesisPipeline: Sendable {
                 totalChunks: chunks.count
             )
             let audio = try await engine.synthesize(request, outputDirectory: outputDirectory)
-            await onChunk(audio)
+            try await onChunk(audio)
         }
     }
 }

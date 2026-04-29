@@ -16,6 +16,7 @@ struct LocalTTSTestRunner {
         testDefaultChunkerSplitsMediumParagraphAtSentences(recorder)
         try testKokoroFrontendPreservesPhonemeTokens(recorder)
         try await testPipelineEmitsFirstChunkBeforeAllChunksAreSynthesized(recorder)
+        try await testPipelineWaitsForChunkCallbackBeforeContinuing(recorder)
         try await testKokoroOnnxSynthesizesWhenAssetsExist(recorder)
         try await testKokoroVoicesProduceDifferentAudio(recorder)
 
@@ -203,6 +204,45 @@ struct LocalTTSTestRunner {
 
         try await task.value
         recorder.expect(await emitted.values == [0, 1, 2], "pipeline emits chunks in order")
+    }
+
+    @MainActor
+    private static func testPipelineWaitsForChunkCallbackBeforeContinuing(
+        _ recorder: FailureRecorder
+    ) async throws {
+        let gate = BackpressureGate()
+        let engine = MockSpeechEngine()
+        let pipeline = SpeechSynthesisPipeline(engine: engine)
+        let chunks = (0..<5).map { index in
+            TextChunk(index: index, text: "Chunk \(index).")
+        }
+        let outputDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outputDirectory) }
+
+        let emitted = EmissionRecorder()
+        let task = Task {
+            try await pipeline.synthesize(
+                chunks: chunks,
+                voice: SpeechVoice(id: "af_heart", name: "Heart", language: "English", detail: "Test"),
+                speed: 1,
+                outputDirectory: outputDirectory
+            ) { audio in
+                await emitted.append(audio.chunkIndex)
+                if audio.chunkIndex == 2 {
+                    await gate.pauseUntilReleased()
+                }
+            }
+        }
+
+        await gate.waitUntilPaused()
+        recorder.expect(await engine.synthesizedCount == 3, "pipeline pauses synthesis while chunk callback applies backpressure")
+        recorder.expect(await emitted.values == [0, 1, 2], "pipeline does not emit later chunks while backpressured")
+        await gate.release()
+
+        try await task.value
+        recorder.expect(await emitted.values == [0, 1, 2, 3, 4], "pipeline resumes after backpressure releases")
     }
 
     @MainActor
@@ -415,6 +455,43 @@ private actor SynthesisGate {
         await withCheckedContinuation { continuation in
             releaseContinuation = continuation
         }
+    }
+}
+
+private actor BackpressureGate {
+    private var paused = false
+    private var released = false
+    private var pauseContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func pauseUntilReleased() async {
+        paused = true
+        pauseContinuation?.resume()
+        pauseContinuation = nil
+
+        if released {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilPaused() async {
+        if paused {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            pauseContinuation = continuation
+        }
+    }
+
+    func release() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }
 

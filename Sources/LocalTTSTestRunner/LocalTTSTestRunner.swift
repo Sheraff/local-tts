@@ -14,6 +14,8 @@ struct LocalTTSTestRunner {
         testDefaultChunkerUsesFirstSentenceForStartup(recorder)
         testDefaultChunkerReachesMinimumForShortFirstSentence(recorder)
         testDefaultChunkerSplitsMediumParagraphAtSentences(recorder)
+        testChunkerKeepsInternalPeriodsInsideSentences(recorder)
+        try testKokoroFrontendMatchesReferenceGoldens(recorder)
         try testKokoroFrontendPreservesPhonemeTokens(recorder)
         try await testPipelineEmitsFirstChunkBeforeAllChunksAreSynthesized(recorder)
         try await testPipelineWaitsForChunkCallbackBeforeContinuing(recorder)
@@ -138,6 +140,84 @@ struct LocalTTSTestRunner {
     }
 
     @MainActor
+    private static func testChunkerKeepsInternalPeriodsInsideSentences(
+        _ recorder: FailureRecorder
+    ) {
+        let chunker = TextChunker(
+            firstMinimumCharacterCount: 1,
+            firstHardCharacterLimit: 240,
+            targetCharacterCount: 240,
+            hardCharacterLimit: 240
+        )
+        let cases = [
+            (
+                "In the U.S.A today. We stayed.",
+                "In the U.S.A today."
+            ),
+            (
+                "Dr. Smith went home. He slept.",
+                "Dr. Smith went home."
+            ),
+            (
+                "This costs 3.14 dollars. We paid.",
+                "This costs 3.14 dollars."
+            ),
+            (
+                "Use v1.2.3, not v1.2.2. Then restart.",
+                "Use v1.2.3, not v1.2.2."
+            ),
+            (
+                "See example.com. Then continue.",
+                "See example.com."
+            ),
+            (
+                "it is a structural problem for U.S. capital. Markets move.",
+                "it is a structural problem for U.S. capital."
+            ),
+        ]
+
+        for (input, expectedFirstChunk) in cases {
+            let chunks = chunker.chunks(from: input)
+            recorder.expect(
+                chunks.first?.text == expectedFirstChunk,
+                "chunker keeps internal periods inside one sentence: \(input)"
+            )
+            recorder.expect(chunks.count == 2, "chunker still splits real sentence boundary: \(input)")
+        }
+    }
+
+    @MainActor
+    private static func testKokoroFrontendMatchesReferenceGoldens(
+        _ recorder: FailureRecorder
+    ) throws {
+        let url = Bundle.module.url(
+            forResource: "KokoroFrontendGolden",
+            withExtension: "json"
+        )
+        guard let url else {
+            recorder.expect(false, "Kokoro frontend golden fixture is bundled")
+            return
+        }
+
+        let fixture = try JSONDecoder().decode(
+            KokoroFrontendGoldenFixture.self,
+            from: Data(contentsOf: url)
+        )
+
+        for entry in fixture.cases {
+            let actual = try KokoroTextFrontend.phonemes(for: entry.text, british: entry.british)
+            recorder.expect(
+                actual == entry.phonemes,
+                """
+                frontend matches \(fixture.source.name) \(fixture.source.version) golden \(entry.id)
+                expected: \(entry.phonemes)
+                actual:   \(actual)
+                """
+            )
+        }
+    }
+
+    @MainActor
     private static func testKokoroFrontendPreservesPhonemeTokens(
         _ recorder: FailureRecorder
     ) throws {
@@ -149,19 +229,38 @@ struct LocalTTSTestRunner {
 
         let phonemes = try KokoroTextFrontend.phonemes(for: "Hello world.")
         recorder.expect(
-            phonemes.contains("həlˈoʊ"),
-            "frontend uses the reference eSpeak phonemizer for American English: \(phonemes)"
+            phonemes.contains("həlˈO"),
+            "frontend uses the Kokoro English G2P phonemizer for American English: \(phonemes)"
         )
 
         let tokenIDs = try KokoroTextFrontend.tokenIDs(for: "Hello world.", tokenizerURL: tokenizerURL)
         let tokenizer = try JSONDecoder().decode(TestTokenizerFile.self, from: Data(contentsOf: tokenizerURL))
 
-        if let lowerO = tokenizer.model.vocab["o"], let upsilon = tokenizer.model.vocab["ʊ"] {
-            recorder.expect(tokenIDs.contains(Int64(lowerO)), "frontend emits eSpeak o token")
-            recorder.expect(tokenIDs.contains(Int64(upsilon)), "frontend emits eSpeak upsilon token")
+        if let kokoroO = tokenizer.model.vocab["O"] {
+            recorder.expect(tokenIDs.contains(Int64(kokoroO)), "frontend emits Kokoro O token")
         } else {
-            recorder.expect(false, "tokenizer contains eSpeak phoneme vocab entries")
+            recorder.expect(false, "tokenizer contains Kokoro phoneme vocab entries")
         }
+
+        let currencyPhonemes = try KokoroTextFrontend.phonemes(for: "It costs $12.50.")
+        recorder.expect(
+            currencyPhonemes.contains("dˈɑləɹz") && currencyPhonemes.contains("sˈɛnts"),
+            "frontend expands USD currency into dollars and cents: \(currencyPhonemes)"
+        )
+
+        let hyphenatedPhonemes = try KokoroTextFrontend.phonemes(
+            for: "A $250-per-month subscription has lock-in and a next-best open-weight option."
+        )
+        recorder.expect(
+            !hyphenatedPhonemes.contains("—"),
+            "frontend does not turn intra-word hyphens into pause punctuation: \(hyphenatedPhonemes)"
+        )
+
+        let emDashPhonemes = try KokoroTextFrontend.phonemes(for: "Subsidize — train.")
+        recorder.expect(
+            emDashPhonemes.contains("—"),
+            "frontend preserves real em dash pause punctuation: \(emDashPhonemes)"
+        )
     }
 
     @MainActor
@@ -410,6 +509,23 @@ private struct TestTokenizerFile: Decodable {
 
     struct Model: Decodable {
         let vocab: [String: Int]
+    }
+}
+
+private struct KokoroFrontendGoldenFixture: Decodable {
+    let source: Source
+    let cases: [Case]
+
+    struct Source: Decodable {
+        let name: String
+        let version: String
+    }
+
+    struct Case: Decodable {
+        let id: String
+        let british: Bool
+        let text: String
+        let phonemes: String
     }
 }
 

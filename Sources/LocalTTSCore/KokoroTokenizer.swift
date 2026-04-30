@@ -85,7 +85,7 @@ public enum KokoroTextFrontend {
             let britishPhonemes = try KokoroPhonemizer().phonemize(sampleText, british: true)
             return KokoroFrontendDiagnostics(
                 backend: KokoroPhonemizer.backendDescription,
-                dataPath: KokoroPhonemizer.dataRootURL.path,
+                dataPath: KokoroPhonemizer.dataPathDescription,
                 americanSample: americanPhonemes,
                 britishSample: britishPhonemes,
                 error: nil
@@ -93,7 +93,7 @@ public enum KokoroTextFrontend {
         } catch {
             return KokoroFrontendDiagnostics(
                 backend: KokoroPhonemizer.backendDescription,
-                dataPath: KokoroPhonemizer.dataRootURL.path,
+                dataPath: KokoroPhonemizer.dataPathDescription,
                 americanSample: nil,
                 britishSample: nil,
                 error: error.localizedDescription

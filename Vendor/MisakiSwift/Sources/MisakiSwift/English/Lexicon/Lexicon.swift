@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import MLXUtilsLibrary
 
 final class Lexicon {
   static let usVocab: Set<Character> = Set("AIOWYbdfhijklmnpstuvwzæðŋɑɔəɛɜɡɪɹɾʃʊʌʒʤʧˈˌθᵊᵻʔ")
@@ -197,13 +198,14 @@ final class Lexicon {
       return lookup(target, tag: nil, stress: -0.5, ctx: ctx)
     } else if let sym = Lexicon.symbolSet[word] {
       return lookup(sym, tag: nil, stress: nil, ctx: ctx)
-    } else if word.trimmingCharacters(in: CharacterSet(charactersIn: ".")).contains(".") {
+    } else if !word.contains(where: { $0.isNumber }),
+              word.trimmingCharacters(in: CharacterSet(charactersIn: ".")).contains(".") {
       let parts = word.split(separator: ".")
       if parts.map({ $0.count }).max() ?? 0 < 3 {
         return getNNP(word)
       }
     } else if word == "a" || word == "A" {
-      if tag == .determiner { return ("ɐ", 4) }
+      if word == "a" || tag == .determiner { return ("ɐ", 4) }
       return ("ˈA", 4)
     } else if ["am", "Am", "AM"].contains(word) {
       if let t = tag, pennTag(for: t, token: word).hasPrefix("NN") {
@@ -236,6 +238,8 @@ final class Lexicon {
     } else if ["in", "In"].contains(word) || (word == "IN" && !(tag?.isProperNoun ?? false)) {
       let s = (ctx.futureVowel == nil || tag != .preposition) ? String(Lexicon.primaryStress) : ""
       return (s + "ɪn", 4)
+    } else if ["that", "That"].contains(word), tag == .determiner {
+      return ("ðˈæt", 4)
     } else if ["the", "The"].contains(word) || (word == "THE" && tag == .determiner) {
       return (ctx.futureVowel == true ? "ði" : "ðə", 4)
     } else if tag == .preposition, word.range(of: "(?i)vs\\.?$", options: .regularExpression) != nil {
@@ -293,7 +297,7 @@ final class Lexicon {
   
   /// Spells out acronyms, abbreviations and proper nouns letter-by-letter
   private func getNNP(_ word: String) -> (phoneme: String?, rating: Int?) {
-    let pieces: [String?] = word.compactMap { ch in
+    let pieces: [String] = word.compactMap { ch in
       if ch.isLetter {
         let s = String(ch).uppercased()
         if let v = golds[s] as? String { return v }
@@ -301,9 +305,9 @@ final class Lexicon {
       return nil
     }
     
-    if pieces.contains(where: { $0 == nil }) { return (nil, nil) }
+    guard !pieces.isEmpty else { return (nil, nil) }
     
-    let joined = Lexicon.applyStress(pieces.compactMap{ $0 }.joined(separator: ""), stress: 0)
+    let joined = Lexicon.applyStress(pieces.joined(separator: ""), stress: 0)
     if let joined {
       let ps = joined.replacingLastOccurrence(of: Lexicon.secondaryStress, with: Lexicon.primaryStress)
       return (ps, 3)

@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 public struct TextChunker: Sendable {
     public let firstMinimumCharacterCount: Int
@@ -83,25 +84,18 @@ public struct TextChunker: Sendable {
 
     private func splitSentences(_ text: String) -> [String] {
         var sentences: [String] = []
-        var current = ""
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
 
-        for scalar in text.unicodeScalars {
-            current.unicodeScalars.append(scalar)
-            if ".!?".unicodeScalars.contains(scalar) {
-                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    sentences.append(trimmed)
-                }
-                current = ""
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            let sentence = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sentence.isEmpty {
+                sentences.append(sentence)
             }
+            return true
         }
 
-        let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !tail.isEmpty {
-            sentences.append(tail)
-        }
-
-        return sentences
+        return sentences.isEmpty ? [text] : sentences
     }
 
     private func splitByWords(_ text: String) -> [String] {

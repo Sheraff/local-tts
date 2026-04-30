@@ -17,21 +17,14 @@ let package = Package(
             url: "https://github.com/microsoft/onnxruntime-swift-package-manager",
             from: "1.24.2"
         ),
-        .package(url: "https://github.com/Sheraff/espeak-ng-spm.git", branch: "local-tts-macos-fixes"),
+        .package(path: "Vendor/MisakiSwift"),
     ],
     targets: [
         .target(
             name: "LocalTTSCore",
             dependencies: [
                 .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
-                .product(name: "libespeak-ng", package: "espeak-ng-spm"),
-                .product(name: "espeak-ng-data", package: "espeak-ng-spm"),
-            ],
-            exclude: [
-                "KokoroG2P/LICENSE-MisakiSwift.txt",
-            ],
-            resources: [
-                .copy("Resources/KokoroG2P"),
+                .product(name: "MisakiSwift", package: "MisakiSwift"),
             ],
             swiftSettings: [
                 .enableUpcomingFeature("ExistentialAny"),
@@ -47,6 +40,9 @@ let package = Package(
         .executableTarget(
             name: "LocalTTSTestRunner",
             dependencies: ["LocalTTSCore"],
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ExistentialAny"),
             ]

@@ -1,11 +1,13 @@
 import Foundation
 import NaturalLanguage
+import MLXUtilsLibrary
 
 // Main G2P pipeline for English text
 final public class EnglishG2P {
   private let british: Bool
   private let tagger: NLTagger
   private let lexicon: Lexicon
+  private let fallback: EnglishFallbackNetwork?
   private let unk: String
     
   static let punctuationTags: Set<NLTag> =  Set([.openQuote, .closeQuote, .openParenthesis, .closeParenthesis, .punctuation, .sentenceTerminator, .otherPunctuation])
@@ -22,6 +24,8 @@ final public class EnglishG2P {
   static let vowels: Set<Character> = Set("AIOQWYaiuæɑɒɔəɛɜɪʊʌᵻ")
   static let consonants: Set<Character> = Set("bdfhjklmnpstvwzðŋɡɹɾʃʒʤʧθ")
   static let subTokenJunks: Set<Character> = Set("',-._''/")
+  static let intraWordHyphens: Set<String> = Set(["-", "‐", "‑"])
+  static let compoundFunctionWords: Set<String> = Set(["in", "on", "out", "off", "up", "to"])
   static let stresses = "ˌˈ"
   static let primaryStress = stresses[stresses.index(stresses.startIndex, offsetBy: 1)]
   static let secondaryStress = stresses[stresses.index(stresses.startIndex, offsetBy: 0)]
@@ -40,11 +44,18 @@ final public class EnglishG2P {
     let tokenRange: Range<String.Index>
   }
 
-  public init(british: Bool = false, unk: String = "❓") {
+  public init(british: Bool = false, unk: String = "❓", useFallbackNetwork: Bool = false) {
     self.british = british
     self.tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass])
     self.lexicon = Lexicon(british: british)
+    self.fallback = useFallbackNetwork ? EnglishFallbackNetwork(british: british) : nil
     self.unk = unk
+  }
+
+  private func fallbackTranscribe(_ token: MToken) -> (String, Int)? {
+    guard let fallback else { return nil }
+    let out = fallback(token)
+    return (out.phoneme, out.rating)
   }
 
   private func tokenContext(_ ctx: TokenContext, ps: String?, token: MToken) -> TokenContext {
@@ -96,11 +107,17 @@ final public class EnglishG2P {
           tokens[i].phonemes = tokens[i].text
           tokens[i].`_`.rating = 3
         } else if tokens[i].text.allSatisfy({ EnglishG2P.subTokenJunks.contains($0) }) {
-          tokens[i].phonemes = nil
+          tokens[i].phonemes = ""
           tokens[i].`_`.rating = 3
         }
       } else if i > 0 {
           tokens[i].`_`.prespace = prespace
+      }
+    }
+
+    for i in 1..<tokens.count where EnglishG2P.compoundFunctionWords.contains(tokens[i].text.lowercased()) {
+      if EnglishG2P.intraWordHyphens.contains(tokens[i - 1].text) {
+        tokens[i].phonemes = Lexicon.applyStress(tokens[i].phonemes, stress: -2)
       }
     }
     
@@ -313,6 +330,50 @@ final public class EnglishG2P {
       nsString.substring(with: match.range)
     }
   }
+
+  static func isNumberToken(_ text: String) -> Bool {
+    var hasDigit = false
+    for (index, character) in text.enumerated() {
+      if character.isNumber {
+        hasDigit = true
+      } else if character == "," || character == "." {
+        continue
+      } else if character == "-", index == 0 {
+        continue
+      } else {
+        return false
+      }
+    }
+    return hasDigit
+  }
+
+  private func isIntraWordHyphen(
+    _ token: MToken,
+    tokenIndex: Int,
+    tokens: [MToken],
+    subtokenIndex: Int,
+    subtokens: [MToken]
+  ) -> Bool {
+    guard EnglishG2P.intraWordHyphens.contains(token.text) else { return false }
+
+    if subtokens.count > 1 {
+      return subtokenIndex > 0 && subtokenIndex + 1 < subtokens.count
+    }
+
+    guard token.whitespace.isEmpty,
+          tokenIndex > 0,
+          tokenIndex + 1 < tokens.count else {
+      return false
+    }
+
+    let previous = tokens[tokenIndex - 1]
+    let next = tokens[tokenIndex + 1]
+    return previous.whitespace.isEmpty && isHyphenNeighbor(previous) && isHyphenNeighbor(next)
+  }
+
+  private func isHyphenNeighbor(_ token: MToken) -> Bool {
+    Lexicon.currencies[token.text] != nil || token.text.contains { $0.isLetter || $0.isNumber }
+  }
   
   func retokenize(_ tokens: [MToken]) -> [Any] {
     var words: [Any] = []
@@ -345,6 +406,8 @@ final public class EnglishG2P {
           currency = token.text
           token.phonemes = ""
           token.`_`.rating = 4
+        } else if isIntraWordHyphen(token, tokenIndex: i, tokens: tokens, subtokenIndex: j, subtokens: subtokens) {
+          token.`_`.rating = 4
         } else if token.tag == .dash || (token.tag == .punctuation && token.text == "–") {
           token.phonemes = "—"
           token.`_`.rating = 3
@@ -355,11 +418,12 @@ final public class EnglishG2P {
             token.phonemes = token.text.filter { EnglishG2P.punctuactions.contains($0) }
           }
           token.`_`.rating = 4
-        } else if currency != nil {
-          if token.tag != .number {
+        } else if let activeCurrency = currency {
+          if !EnglishG2P.isNumberToken(token.text) {
             currency = nil
-          } else if j + 1 == subtokens.count && (i + 1 == tokens.count || tokens[i + 1].tag != .number) {
-            token.`_`.currency = currency
+          } else if j + 1 == subtokens.count && (i + 1 == tokens.count || !EnglishG2P.isNumberToken(tokens[i + 1].text)) {
+            token.`_`.currency = activeCurrency
+            currency = nil
           }
         } else if j > 0 && j < subtokens.count - 1 && token.text == "2" {
           let prev = subtokens[j - 1].text
@@ -413,8 +477,7 @@ final public class EnglishG2P {
           w.`_`.rating = out.1
         }
         
-        if w.phonemes == nil {
-          let out = fallbackWithoutNeuralModel(w)
+        if w.phonemes == nil, let out = fallbackTranscribe(w) {
           w.phonemes = out.0
           w.`_`.rating = out.1
         }
@@ -461,15 +524,18 @@ final public class EnglishG2P {
         if shouldFallback {
           let token = mergeTokens(arr)
           let first = arr[0]
-          let out = fallbackWithoutNeuralModel(token)
-          first.phonemes = out.0
-          first.`_`.rating = out.1
-          arr[0] = first
-          if arr.count > 1 {
-            for j in 1..<arr.count {
-              arr[j].phonemes = ""
-              arr[j].`_`.rating = out.1
+          if let out = fallbackTranscribe(token) {
+            first.phonemes = out.0
+            first.`_`.rating = out.1
+            arr[0] = first
+            if arr.count > 1 {
+              for j in 1..<arr.count {
+                arr[j].phonemes = ""
+                arr[j].`_`.rating = out.1
+              }
             }
+          } else {
+            resolveTokens(&arr)
           }
         } else {
           resolveTokens(&arr)
@@ -491,27 +557,5 @@ final public class EnglishG2P {
 
     let result = finalTokens.map { ( $0.phonemes ?? self.unk ) + $0.whitespace }.joined()
     return (result, finalTokens)
-  }
-
-  private func fallbackWithoutNeuralModel(_ token: MToken) -> (String?, Int?) {
-    let word = token.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !word.isEmpty else { return ("", 2) }
-
-    if word.count <= 6, word.allSatisfy(\.isLetter), word == word.uppercased() {
-      let pieces = word.compactMap { character -> String? in
-        let letterToken = MToken(
-          text: String(character),
-          tokenRange: word.startIndex..<word.startIndex,
-          tag: .otherWord,
-          whitespace: ""
-        )
-        return lexicon.transcribe(letterToken, ctx: TokenContext()).0
-      }
-      if pieces.count == word.count {
-        return (pieces.joined(), 2)
-      }
-    }
-
-    return (nil, nil)
   }
 }

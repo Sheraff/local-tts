@@ -1,0 +1,59 @@
+{
+  "source": {
+    "name": "misaki",
+    "version": "0.9.4",
+    "api": "misaki.en.G2P(trf=False, british=<case.british>, fallback=None)",
+    "generatedWith": "Scripts/generate-kokoro-frontend-goldens.py",
+    "runtime": "development/test oracle only; the app does not run Python"
+  },
+  "cases": [
+    {
+      "id": "hello-world",
+      "british": false,
+      "text": "Hello world.",
+      "phonemes": "həlˈO wˈɜɹld."
+    },
+    {
+      "id": "usd-cents",
+      "british": false,
+      "text": "It costs $12.50.",
+      "phonemes": "ˌɪt kˈɔsts twˈɛlv dˈɑləɹz ænd fˈɪfti sˈɛnts."
+    },
+    {
+      "id": "hyphenated-subscription",
+      "british": false,
+      "text": "A $250-per-month subscription has lock-in and a next-best open-weight option.",
+      "phonemes": "ɐ tˈu hˈʌndɹəd fˈɪfti dˈɑləɹz pɜɹ mˈʌnθ səbskɹˈɪpʃən hæz lˈɑkɪn ænd ɐ nˈɛkstbˌɛst ˈOpᵊnwˌAt ˈɑpʃən."
+    },
+    {
+      "id": "real-em-dash",
+      "british": false,
+      "text": "Subsidize — train.",
+      "phonemes": "sˈʌbsədˌIz — tɹˈAn."
+    },
+    {
+      "id": "us-abbreviation",
+      "british": false,
+      "text": "That is a structural problem for U.S. capital.",
+      "phonemes": "ðˈæt ɪz ɐ stɹˈʌkʧəɹəl pɹˈɑbləm fɔɹ jˌuˈɛs kˈæpəTᵊl."
+    },
+    {
+      "id": "original-deal-sentence",
+      "british": false,
+      "text": "The original deal — subsidize, train, reprice — assumed lock-in at the moment of repricing.",
+      "phonemes": "ði əɹˈɪʤənᵊl dˈil — sˈʌbsədˌIz, tɹˈAn, ɹipɹˈIs — əsˈumd lˈɑkɪn æt ðə mˈOmᵊnt ʌv ɹᵻpɹˈIsɪŋ."
+    },
+    {
+      "id": "lock-in-next-best",
+      "british": false,
+      "text": "Lock-in does not exist if the next-best option is free.",
+      "phonemes": "lˈɑkɪn dˈʌz nˌɑt ɪɡzˈɪst ɪf ðə nˈɛkstbˌɛst ˈɑpʃən ɪz fɹˈi."
+    },
+    {
+      "id": "consumer-rationing-sentence",
+      "british": false,
+      "text": "A consumer rationing a $250-per-month subscription at the moment of repricing has the option, today, of running an open-weight equivalent at fifteen dollars in cloud compute or zero dollars on a sufficiently equipped local machine.",
+      "phonemes": "ɐ kənsˈuməɹ ɹˈæʃənɪŋ ɐ tˈu hˈʌndɹəd fˈɪfti dˈɑləɹz pɜɹ mˈʌnθ səbskɹˈɪpʃən æt ðə mˈOmᵊnt ʌv ɹᵻpɹˈIsɪŋ hæz ði ˈɑpʃən, tədˈA, ʌv ɹˈʌnɪŋ ɐn ˈOpᵊnwˌAt əkwˈɪvᵊlənt æt fˌɪftˈin dˈɑləɹz ɪn klˈWd kəmpjˈut ɔɹ zˈɪɹO dˈɑləɹz ˌɔn ɐ səfˈɪʃəntli əkwˈɪpt lˈOkəl məʃˈin."
+    }
+  ]
+}

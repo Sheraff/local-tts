@@ -34,7 +34,7 @@ enum LocalTTSDiagnostics {
         let frontend = KokoroTextFrontend.diagnostics()
         print("Frontend: \(frontend.displayText)")
         print("Phonemizer backend: \(frontend.backend)")
-        print("eSpeak data: \(frontend.dataPath)")
+        print("G2P data: \(frontend.dataPath)")
         if let americanSample = frontend.americanSample {
             print("US sample: \(americanSample)")
         }

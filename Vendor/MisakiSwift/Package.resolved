@@ -1,5 +1,5 @@
 {
-  "originHash" : "05ce9df7e20921d92e7eb88f41f7bada4966b891c747fb7696024608a287ace3",
+  "originHash" : "e80e3db500afa65e34b31cca84d9311bc877f9e5cf6d06e59e1f9d45b6fb2fd4",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -20,21 +20,12 @@
       }
     },
     {
-      "identity" : "onnxruntime-swift-package-manager",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/microsoft/onnxruntime-swift-package-manager",
-      "state" : {
-        "revision" : "b7fb7f7dea8a2469e6335d95a61b8f36d0dc83b2",
-        "version" : "1.24.2"
-      }
-    },
-    {
       "identity" : "swift-numerics",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-numerics",
       "state" : {
-        "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
-        "version" : "1.1.1"
+        "revision" : "bbadd4b853a33fd78c4ae977d17bb2af15eb3f2a",
+        "version" : "1.1.0"
       }
     },
     {

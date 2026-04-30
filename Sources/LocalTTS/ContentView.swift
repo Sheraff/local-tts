@@ -216,7 +216,7 @@ struct ContentView: View {
             LabeledContent("Executable", value: Bundle.main.executableURL?.path ?? "Unknown")
             LabeledContent("Frontend", value: model.frontendStatus)
             LabeledContent("Backend", value: model.frontendBackend)
-            LabeledContent("eSpeak data", value: model.frontendDataPath)
+            LabeledContent("G2P data", value: model.frontendDataPath)
 
             if !model.frontendAmericanSample.isEmpty {
                 LabeledContent("US sample", value: model.frontendAmericanSample)

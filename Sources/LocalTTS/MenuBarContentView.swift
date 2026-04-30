@@ -46,6 +46,13 @@ struct MenuBarContentView: View {
                 }
 
                 Button {
+                    model.readCurrentBrowserTab()
+                } label: {
+                    Label("Tab", systemImage: "safari")
+                }
+                .disabled(model.isLoadingArticle)
+
+                Button {
                     model.togglePause()
                 } label: {
                     Label(player.status == .paused ? "Resume" : "Pause", systemImage: player.status == .paused ? "play.fill" : "pause.fill")

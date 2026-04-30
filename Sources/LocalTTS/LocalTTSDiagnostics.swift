@@ -35,6 +35,7 @@ enum LocalTTSDiagnostics {
         print("Frontend: \(frontend.displayText)")
         print("Phonemizer backend: \(frontend.backend)")
         print("G2P data: \(frontend.dataPath)")
+        print("Text normalizer: \(TextNormalizationPipeline.appDefault().displayName)")
         if let americanSample = frontend.americanSample {
             print("US sample: \(americanSample)")
         }

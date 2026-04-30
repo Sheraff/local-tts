@@ -20,11 +20,15 @@ final class KokoroPhonemizer: @unchecked Sendable {
     }
 
     static var backendDescription: String {
-        "MisakiSwift"
+        usesNeuralFallback ? "MisakiSwift with MLX fallback" : "MisakiSwift dictionary"
     }
 
     static var dataPathDescription: String {
         "MisakiSwift package resources"
+    }
+
+    static var usesNeuralFallback: Bool {
+        canLoadMLXDefaultLibrary
     }
 
     private static func withLock<T>(_ body: () throws -> T) rethrows -> T {
@@ -38,7 +42,7 @@ final class KokoroPhonemizer: @unchecked Sendable {
             if let britishG2P {
                 return britishG2P
             }
-            let g2p = EnglishG2P(british: true, useFallbackNetwork: false)
+            let g2p = EnglishG2P(british: true, useFallbackNetwork: usesNeuralFallback)
             britishG2P = g2p
             return g2p
         }
@@ -46,9 +50,23 @@ final class KokoroPhonemizer: @unchecked Sendable {
         if let americanG2P {
             return americanG2P
         }
-        let g2p = EnglishG2P(british: false, useFallbackNetwork: false)
+        let g2p = EnglishG2P(british: false, useFallbackNetwork: usesNeuralFallback)
         americanG2P = g2p
         return g2p
+    }
+
+    private static var canLoadMLXDefaultLibrary: Bool {
+        let fileManager = FileManager.default
+        let executableDirectory = Bundle.main.executableURL?.deletingLastPathComponent()
+        let candidates = [
+            executableDirectory?.appendingPathComponent("mlx.metallib"),
+            executableDirectory?.appendingPathComponent("Resources/mlx.metallib"),
+            Bundle.main.resourceURL?.appendingPathComponent("mlx-swift_Cmlx.bundle/default.metallib"),
+            Bundle.main.resourceURL?.appendingPathComponent("mlx-swift_Cmlx.bundle/mlx.metallib"),
+            Bundle.main.resourceURL?.appendingPathComponent("default.metallib"),
+            Bundle.main.resourceURL?.appendingPathComponent("mlx.metallib"),
+        ]
+        return candidates.compactMap { $0?.path }.contains { fileManager.fileExists(atPath: $0) }
     }
 
     private static func preprocess(_ input: String) -> String {

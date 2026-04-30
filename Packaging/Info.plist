@@ -21,7 +21,7 @@
     <key>LSMinimumSystemVersion</key>
     <string>15.7.5</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Local TTS uses macOS automation and accessibility features to read selected text from the focused app.</string>
+    <string>Local TTS uses macOS automation to read the active browser tab URL when requested.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2026</string>
     <key>NSPrincipalClass</key>

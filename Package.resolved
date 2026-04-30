@@ -1,5 +1,5 @@
 {
-  "originHash" : "05ce9df7e20921d92e7eb88f41f7bada4966b891c747fb7696024608a287ace3",
+  "originHash" : "d56bd09fe9ff45cf48014befb511bb46002cbf4af1ba387563708ea8c2aa4503",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "swift-readability",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Ryu0118/swift-readability",
+      "state" : {
+        "revision" : "961453ade5b0fecdc5f3b0d562071cfc4b0603ea",
+        "version" : "0.3.0"
       }
     },
     {

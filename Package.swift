@@ -18,6 +18,7 @@ let package = Package(
             from: "1.24.2"
         ),
         .package(path: "Vendor/MisakiSwift"),
+        .package(url: "https://github.com/Ryu0118/swift-readability", exact: "0.3.0"),
     ],
     targets: [
         .target(
@@ -32,7 +33,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "LocalTTS",
-            dependencies: ["LocalTTSCore"],
+            dependencies: [
+                "LocalTTSCore",
+                .product(name: "Readability", package: "swift-readability"),
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ExistentialAny"),
             ]

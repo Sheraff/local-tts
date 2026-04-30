@@ -6,6 +6,11 @@ import LocalTTSCore
 final class AppModel: ObservableObject {
     @Published var voices: [SpeechVoice] = []
     @Published var manualText = ""
+    @Published var articleURLText = ""
+    @Published var articleStatus = ""
+    @Published var articleTitle = ""
+    @Published var articleSource = ""
+    @Published var isLoadingArticle = false
     @Published var permissionStatus = "Accessibility permission not checked"
     @Published var modelStatus = "Model status not checked"
     @Published var modelDownloadStatus = ""
@@ -20,12 +25,15 @@ final class AppModel: ObservableObject {
     @Published var frontendDataPath = "Not resolved"
     @Published var frontendAmericanSample = ""
     @Published var frontendBritishSample = ""
+    @Published var textNormalizerStatus = "Not resolved"
 
     let settings: AppSettings
     let player: SpeechPlaybackCoordinator
     let hotKeyManager: GlobalHotKeyManager
 
     private let captureService: TextCaptureService
+    private let articleIngestionService: ArticleIngestionService
+    private let browserTabURLReader: BrowserTabURLReader
     private let engine: KokoroOnnxEngine
     private var downloadTask: Task<Void, Never>?
     private var observers: [any NSObjectProtocol] = []
@@ -36,6 +44,8 @@ final class AppModel: ObservableObject {
         player = SpeechPlaybackCoordinator(engine: engine)
         hotKeyManager = GlobalHotKeyManager()
         captureService = TextCaptureService()
+        articleIngestionService = ArticleIngestionService()
+        browserTabURLReader = BrowserTabURLReader()
 
         player.idleUnloadSeconds = settings.idleUnloadMinutes * 60
         settings.onHotKeySettingsChanged = { [weak self] in
@@ -125,6 +135,7 @@ final class AppModel: ObservableObject {
         frontendDataPath = diagnostics.dataPath
         frontendAmericanSample = diagnostics.americanSample ?? ""
         frontendBritishSample = diagnostics.britishSample ?? ""
+        textNormalizerStatus = player.textNormalizerName
     }
 
     func applyHotKeySettings() {
@@ -148,11 +159,67 @@ final class AppModel: ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+
+        if let url = ArticleURLDetector.url(from: captured.text) {
+            readArticle(from: url, source: .articleURL)
+            return
+        }
+
         read(captured.text, source: captured.source)
     }
 
     func readManualText() {
         read(manualText, source: .manual)
+    }
+
+    func readArticleURLText() {
+        guard let url = ArticleURLDetector.url(from: articleURLText) else {
+            articleStatus = "Enter a valid article URL"
+            return
+        }
+
+        readArticle(from: url, source: .articleURL)
+    }
+
+    func readCurrentBrowserTab() {
+        do {
+            let url = try browserTabURLReader.activeTabURL()
+            articleURLText = url.absoluteString
+            readArticle(from: url, source: .browserTab)
+        } catch {
+            articleStatus = error.localizedDescription
+        }
+    }
+
+    func readArticle(from url: URL, source: CaptureSource) {
+        guard !isLoadingArticle else {
+            return
+        }
+
+        isLoadingArticle = true
+        articleURLText = url.absoluteString
+        articleStatus = "Fetching article"
+        articleTitle = ""
+        articleSource = url.host(percentEncoded: false) ?? url.absoluteString
+
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+
+            do {
+                let article = try await articleIngestionService.extractArticle(from: url)
+                manualText = article.readableText
+                articleTitle = article.title
+                articleSource = article.displaySource
+                articleStatus = "Ready: \(article.body.count) characters"
+                isLoadingArticle = false
+                read(article.readableText, source: source)
+            } catch {
+                articleStatus = error.localizedDescription
+                isLoadingArticle = false
+            }
+        }
     }
 
     func read(_ text: String, source: CaptureSource) {

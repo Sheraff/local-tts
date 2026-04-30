@@ -17,6 +17,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 controls
+                articleReader
                 manualReader
                 statusPanel
                 modelPanel
@@ -57,6 +58,44 @@ struct ContentView: View {
             }
 
             Spacer()
+        }
+    }
+
+    private var articleReader: some View {
+        section("Article") {
+            HStack(spacing: 10) {
+                TextField("https://example.com/article", text: $model.articleURLText)
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    model.readArticleURLText()
+                } label: {
+                    Label("Read URL", systemImage: "link")
+                }
+                .disabled(model.articleURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isLoadingArticle)
+
+                Button {
+                    model.readCurrentBrowserTab()
+                } label: {
+                    Label("Read Browser Tab", systemImage: "safari")
+                }
+                .disabled(model.isLoadingArticle)
+            }
+
+            if model.isLoadingArticle {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            if !model.articleTitle.isEmpty {
+                LabeledContent("Title", value: model.articleTitle)
+            }
+            if !model.articleSource.isEmpty {
+                LabeledContent("Source", value: model.articleSource)
+            }
+            if !model.articleStatus.isEmpty {
+                LabeledContent("Article", value: model.articleStatus)
+            }
         }
     }
 
@@ -217,6 +256,7 @@ struct ContentView: View {
             LabeledContent("Frontend", value: model.frontendStatus)
             LabeledContent("Backend", value: model.frontendBackend)
             LabeledContent("G2P data", value: model.frontendDataPath)
+            LabeledContent("Text normalization", value: model.textNormalizerStatus)
 
             if !model.frontendAmericanSample.isEmpty {
                 LabeledContent("US sample", value: model.frontendAmericanSample)

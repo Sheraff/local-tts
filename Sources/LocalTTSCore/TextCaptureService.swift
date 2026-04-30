@@ -5,6 +5,8 @@ import Foundation
 public enum CaptureSource: String, Sendable {
     case accessibilitySelection = "Selection"
     case clipboard = "Clipboard"
+    case articleURL = "Article URL"
+    case browserTab = "Browser Tab"
     case manual = "Manual"
     case none = "None"
 }

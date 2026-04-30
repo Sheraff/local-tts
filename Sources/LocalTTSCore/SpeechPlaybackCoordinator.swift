@@ -14,7 +14,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
     public var idleUnloadSeconds: TimeInterval = 600
 
     private let engine: any SpeechEngine
-    private let normalizer: TextNormalizer
+    private let normalizer: any SpeechTextNormalizer
     private let chunker: TextChunker
 
     private var producerTask: Task<Void, Never>?
@@ -31,13 +31,17 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
 
     public init(
         engine: any SpeechEngine,
-        normalizer: TextNormalizer = TextNormalizer(),
+        normalizer: any SpeechTextNormalizer = TextNormalizationPipeline.appDefault(),
         chunker: TextChunker = TextChunker()
     ) {
         self.engine = engine
         self.normalizer = normalizer
         self.chunker = chunker
         super.init()
+    }
+
+    public var textNormalizerName: String {
+        normalizer.displayName
     }
 
     deinit {
@@ -54,37 +58,39 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
         stop(clearSession: true)
         idleUnloadTask?.cancel()
 
-        let normalized = normalizer.normalize(text)
-        let chunks = chunker.chunks(from: normalized)
-
-        guard !chunks.isEmpty else {
-            status = .failed("No readable text found")
-            return
-        }
-
         captureSource = source
-        totalChunks = chunks.count
+        totalChunks = 0
         currentChunkIndex = 0
         queuedChunks = 0
         producerFinished = false
         let sessionID = UUID()
         activeSessionID = sessionID
         lastError = nil
-        modelState = .loading
         status = .preparing
-
-        let outputDirectory: URL
-        do {
-            outputDirectory = try AppPaths.makeSessionDirectory()
-            sessionDirectory = outputDirectory
-        } catch {
-            status = .failed(error.localizedDescription)
-            return
-        }
 
         let pipeline = SpeechSynthesisPipeline(engine: engine)
         producerTask = Task { [weak self] in
             do {
+                guard let self else {
+                    throw CancellationError()
+                }
+
+                let normalized = try await self.normalizer.normalize(text)
+                try Task.checkCancellation()
+                guard self.activeSessionID == sessionID else {
+                    throw CancellationError()
+                }
+                let chunks = self.chunker.chunks(from: normalized)
+
+                guard !chunks.isEmpty else {
+                    throw SpeechEngineError.synthesisFailed("No readable text found")
+                }
+
+                let outputDirectory = try AppPaths.makeSessionDirectory()
+                self.sessionDirectory = outputDirectory
+                self.totalChunks = chunks.count
+                self.modelState = .loading
+
                 try await pipeline.synthesize(
                     chunks: chunks,
                     voice: voice,
@@ -96,7 +102,7 @@ public final class SpeechPlaybackCoordinator: NSObject, ObservableObject {
                     }
                     try await self.enqueue(audio, sessionID: sessionID)
                 }
-                self?.finishProducing(sessionID: sessionID)
+                self.finishProducing(sessionID: sessionID)
             } catch is CancellationError {
                 self?.finishProducing(sessionID: sessionID)
             } catch {

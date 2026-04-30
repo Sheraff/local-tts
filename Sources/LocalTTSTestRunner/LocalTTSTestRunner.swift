@@ -9,14 +9,18 @@ struct LocalTTSTestRunner {
         let recorder = FailureRecorder()
 
         testNormalizeRemovesObviousChromeAndPreservesParagraphs(recorder)
+        testNormalizeRemovesObjectReplacementPlaceholders(recorder)
         testChunkerKeepsChunksUnderHardLimitForLongParagraphs(recorder)
         testDefaultChunkerSplitsMediumPastedParagraphs(recorder)
         testDefaultChunkerUsesFirstSentenceForStartup(recorder)
         testDefaultChunkerReachesMinimumForShortFirstSentence(recorder)
         testDefaultChunkerSplitsMediumParagraphAtSentences(recorder)
         testChunkerKeepsInternalPeriodsInsideSentences(recorder)
+        try await testExternalTextNormalizerRunsBeforeChunking(recorder)
+        try await testNativeSparrowhawkTextNormalizerHandlesArticleCases(recorder)
         try testKokoroFrontendMatchesReferenceGoldens(recorder)
         try testKokoroFrontendPreservesPhonemeTokens(recorder)
+        try testKokoroFrontendUsesFallbackForArticleVocabulary(recorder)
         try await testPipelineEmitsFirstChunkBeforeAllChunksAreSynthesized(recorder)
         try await testPipelineWaitsForChunkCallbackBeforeContinuing(recorder)
         try await testKokoroOnnxSynthesizesWhenAssetsExist(recorder)
@@ -54,6 +58,29 @@ struct LocalTTSTestRunner {
         recorder.expect(!normalized.localizedCaseInsensitiveContains("privacy policy"), "normalizer removes privacy policy")
         recorder.expect(normalized.contains("first paragraph. It has extra spacing."), "normalizer collapses inline whitespace")
         recorder.expect(normalized.contains("\n\nThis is the second paragraph."), "normalizer preserves paragraph boundary")
+    }
+
+    @MainActor
+    private static func testNormalizeRemovesObjectReplacementPlaceholders(
+        _ recorder: FailureRecorder
+    ) {
+        let input = """
+        matching a pathname to a route is no longer bottlenecked by the number of routes in your application.
+        \u{FFFC}
+        One big responsibility of a router is to match a given URL pathname.
+        """
+
+        let normalized = TextNormalizer().normalize(input)
+        let chunks = TextChunker().chunks(from: normalized)
+
+        recorder.expect(!normalized.contains("\u{FFFC}"), "normalizer removes object replacement characters")
+        recorder.expect(
+            chunks.map(\.text) == [
+                "matching a pathname to a route is no longer bottlenecked by the number of routes in your application.",
+                "One big responsibility of a router is to match a given URL pathname.",
+            ],
+            "object placeholders do not become speech chunks or chunk prefixes: \(chunks.map(\.text))"
+        )
     }
 
     @MainActor
@@ -187,6 +214,75 @@ struct LocalTTSTestRunner {
     }
 
     @MainActor
+    private static func testExternalTextNormalizerRunsBeforeChunking(
+        _ recorder: FailureRecorder
+    ) async throws {
+        let normalizer = TextNormalizationPipeline(
+            stages: [
+                BasicSpeechTextNormalizer(),
+                ExternalProcessTextNormalizer(
+                    executableURL: URL(fileURLWithPath: "/bin/cat"),
+                    displayName: "cat",
+                    timeout: 2
+                ),
+            ]
+        )
+        let normalized = try await normalizer.normalize("Hello    world.\n\n")
+        recorder.expect(
+            normalized == "Hello world.",
+            "external text normalizer receives built-in-normalized text before chunking"
+        )
+    }
+
+    @MainActor
+    private static func testNativeSparrowhawkTextNormalizerHandlesArticleCases(
+        _ recorder: FailureRecorder
+    ) async throws {
+        let runtimeDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".build/sparrowhawk-runtime")
+        guard let normalizer = SparrowhawkTextNormalizer(runtimeDirectory: runtimeDirectory) else {
+            print("Skipping native Sparrowhawk TN test; runtime is not built")
+            return
+        }
+
+        let normalized = try await normalizer.normalize(
+            """
+            by Florian Pellet on Nov 18, 2025.
+            We achieved a 20,000\u{00D7} performance improvement.
+            static, dynamic, optional, wildcard.
+            behaved differently between Chrome and Firefox.
+            We now parse the route tree into a segment trie, and matching is done by traversing this trie.
+            the tree can only eliminate 50% of routes
+            """
+        )
+
+        recorder.expect(
+            normalized.contains("by Florian Pellet on november eighteenth, twenty twenty five."),
+            "native Sparrowhawk TN expands article dates without dropping names: \(normalized)"
+        )
+        recorder.expect(
+            normalized.contains("We achieved a twenty thousand times performance improvement."),
+            "native Sparrowhawk TN expands large multipliers: \(normalized)"
+        )
+        recorder.expect(
+            normalized.contains("static, dynamic, optional, wildcard."),
+            "native Sparrowhawk TN preserves enumerations: \(normalized)"
+        )
+        recorder.expect(
+            normalized.contains("behaved differently between Chrome and Firefox."),
+            "native Sparrowhawk TN preserves browser names: \(normalized)"
+        )
+        recorder.expect(
+            normalized.contains("segment trie") && normalized.contains("this trie"),
+            "native Sparrowhawk TN preserves technical vocabulary: \(normalized)"
+        )
+        recorder.expect(
+            normalized.contains("fifty percent of routes"),
+            "native Sparrowhawk TN expands percentages: \(normalized)"
+        )
+    }
+
+    @MainActor
     private static func testKokoroFrontendMatchesReferenceGoldens(
         _ recorder: FailureRecorder
     ) throws {
@@ -261,6 +357,31 @@ struct LocalTTSTestRunner {
             emDashPhonemes.contains("—"),
             "frontend preserves real em dash pause punctuation: \(emDashPhonemes)"
         )
+    }
+
+    @MainActor
+    private static func testKokoroFrontendUsesFallbackForArticleVocabulary(
+        _ recorder: FailureRecorder
+    ) throws {
+        guard KokoroTextFrontend.usesNeuralFallback else {
+            print("Skipping Kokoro fallback vocabulary test; MLX metallib is not available")
+            return
+        }
+
+        let cases = [
+            "by Florian Pellet on Nov 18, 2025.",
+            "static, dynamic, optional, wildcard.",
+            "Chrome and Firefox.",
+            "We now parse the route tree into a segment trie.",
+        ]
+
+        for text in cases {
+            let phonemes = try KokoroTextFrontend.phonemes(for: text)
+            recorder.expect(
+                !phonemes.contains("❓"),
+                "frontend uses fallback G2P instead of dropping article vocabulary: \(text) -> \(phonemes)"
+            )
+        }
     }
 
     @MainActor

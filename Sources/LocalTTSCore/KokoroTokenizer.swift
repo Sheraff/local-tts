@@ -67,6 +67,10 @@ final class KokoroTokenizer: @unchecked Sendable {
 }
 
 public enum KokoroTextFrontend {
+    public static var usesNeuralFallback: Bool {
+        KokoroPhonemizer.usesNeuralFallback
+    }
+
     public static func phonemes(for text: String, british: Bool = false) throws -> String {
         try KokoroPhonemizer().phonemize(text, british: british)
     }
